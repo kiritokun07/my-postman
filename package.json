@@ -13,7 +13,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build --no-bundle",
     "tauri:build:installer": "tauri build",
-    "tauri:build:win": "powershell -ExecutionPolicy Bypass -File scripts/tauri-build.ps1"
+    "tauri:build:win": "powershell -ExecutionPolicy Bypass -File scripts/tauri-build.ps1",
+    "tauri:build:mac": "bash scripts/tauri-build.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
