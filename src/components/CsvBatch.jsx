@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import Papa from 'papaparse'
+import { proxyRequest } from '../utils/proxy'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,18 +21,6 @@ function statusClass(status) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function insertAtCursor(el, text, getValue, setValue) {
-  if (!el) { setValue((prev) => prev + text); return }
-  const start = el.selectionStart ?? getValue().length
-  const end = el.selectionEnd ?? getValue().length
-  const next = getValue().slice(0, start) + text + getValue().slice(end)
-  setValue(next)
-  requestAnimationFrame(() => {
-    el.focus()
-    el.setSelectionRange(start + text.length, start + text.length)
-  })
 }
 
 function tryPrettyJson(str) {
@@ -163,13 +152,11 @@ function DetailModal({ result, onClose }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
+export default function CsvBatch({ method, url, body, bodyType, headers, onInsertParam }) {
   const [csvData, setCsvData] = useState(null)
   const [fileName, setFileName] = useState('')
   const [dragOver, setDragOver] = useState(false)
 
-  const [urlTemplate, setUrlTemplate] = useState(baseUrl || '')
-  const [bodyTemplate, setBodyTemplate] = useState(baseBody || '')
   const [previewIndex, setPreviewIndex] = useState(0)
 
   const [running, setRunning] = useState(false)
@@ -180,13 +167,7 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
   const [selectedResult, setSelectedResult] = useState(null)
 
   const abortRef = useRef(false)
-  const urlInputRef = useRef(null)
-  const bodyTextareaRef = useRef(null)
-  const lastFocusedRef = useRef(null)
   const fileInputRef = useRef(null)
-
-  useEffect(() => { setUrlTemplate((prev) => prev || baseUrl || '') }, [baseUrl])
-  useEffect(() => { setBodyTemplate((prev) => prev || baseBody || '') }, [baseBody])
 
   // ── CSV ───────────────────────────────────────────────────────────────────
 
@@ -206,28 +187,17 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
 
   const onDrop = (e) => { e.preventDefault(); setDragOver(false); parseFile(e.dataTransfer.files[0]) }
 
-  // ── Param insertion ────────────────────────────────────────────────────────
-
-  const insertParam = (col) => {
-    const ph = `{{${col}}}`
-    if (lastFocusedRef.current === 'url') {
-      insertAtCursor(urlInputRef.current, ph, () => urlTemplate, setUrlTemplate)
-    } else {
-      insertAtCursor(bodyTextareaRef.current, ph, () => bodyTemplate, setBodyTemplate)
-    }
-  }
-
   // ── Live preview ──────────────────────────────────────────────────────────
 
   const currentRow = csvData?.rows[previewIndex] || {}
-  const previewUrl = substitute(urlTemplate, currentRow)
-  const previewBody = substitute(bodyTemplate, currentRow)
+  const previewUrl = substitute(url, currentRow)
+  const previewBody = bodyType !== 'none' && body ? substitute(body, currentRow) : ''
 
   // ── Single request (stores full response) ─────────────────────────────────
 
   const sendOne = async (row, index) => {
-    const resolvedUrl = substitute(urlTemplate, row)
-    const resolvedBody = bodyTemplate ? substitute(bodyTemplate, row) : undefined
+    const resolvedUrl = substitute(url, row)
+    const resolvedBody = bodyType !== 'none' && body ? substitute(body, row) : undefined
 
     const headersObj = {}
     ;(headers || []).forEach(({ key, value, enabled }) => {
@@ -235,12 +205,12 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
     })
 
     try {
-      const res = await fetch('/api/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ method, url: resolvedUrl, headers: headersObj, body: resolvedBody }),
+      const data = await proxyRequest({
+        method,
+        url: resolvedUrl,
+        headers: headersObj,
+        body: resolvedBody,
       })
-      const data = await res.json()
       return {
         index: index + 1,
         method,
@@ -268,7 +238,7 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
   // ── Batch run ─────────────────────────────────────────────────────────────
 
   const runBatch = async () => {
-    if (!csvData || !urlTemplate) return
+    if (!csvData || !url.trim()) return
     setRunning(true); setProgress(0); setResults([]); abortRef.current = false
     const rows = csvData.rows
     const total = rows.length
@@ -356,11 +326,11 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
         <div className="csv-params-panel">
           <div className="csv-params-title">
             <span>📌 Parameters</span>
-            <span className="csv-params-hint">Click a parameter to insert at cursor</span>
+            <span className="csv-params-hint">Focus URL bar or Body tab, then click to insert</span>
           </div>
           <div className="csv-params-chips">
             {csvData.columns.map((col) => (
-              <button key={col} className="csv-param-chip" onClick={() => insertParam(col)} title={`Insert {{${col}}}`}>
+              <button key={col} className="csv-param-chip" onClick={() => onInsertParam(col)} title={`Insert {{${col}}}`}>
                 <span className="csv-chip-brace">{"{{"}</span>
                 {col}
                 <span className="csv-chip-brace">{"}}"}</span>
@@ -397,49 +367,7 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
           </div>
         </div>
 
-        {/* 4. URL & Body templates */}
-        <div className="csv-templates">
-          <div className="csv-tpl-block">
-            <div className="csv-label">
-              URL Template
-              <span style={{ fontWeight: 400, color: 'var(--overlay0)', marginLeft: 6, fontSize: 10 }}>focus then click a parameter to insert</span>
-            </div>
-            <input
-              ref={urlInputRef}
-              className="kv-input"
-              style={{ width: '100%', fontFamily: 'Courier New, monospace' }}
-              placeholder="https://api.example.com/users/{{id}}"
-              value={urlTemplate}
-              onFocus={() => { lastFocusedRef.current = 'url' }}
-              onChange={(e) => setUrlTemplate(e.target.value)}
-            />
-          </div>
-
-          <div className="csv-tpl-block">
-            <div className="csv-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>
-                Body Template
-                <span style={{ fontWeight: 400, color: 'var(--overlay0)', marginLeft: 6, fontSize: 10 }}>focus then click a parameter to insert</span>
-              </span>
-              <button className="btn btn-ghost" style={{ fontSize: 10, padding: '1px 6px' }}
-                onClick={() => { try { setBodyTemplate(JSON.stringify(JSON.parse(bodyTemplate), null, 2)) } catch { } }}>
-                ⎘ Beautify
-              </button>
-            </div>
-            <textarea
-              ref={bodyTextareaRef}
-              className="body-textarea"
-              style={{ minHeight: 90, maxHeight: 160 }}
-              placeholder={'{\n  "id": "{{id}}",\n  "name": "{{name}}"\n}'}
-              value={bodyTemplate}
-              onFocus={() => { lastFocusedRef.current = 'body' }}
-              onChange={(e) => setBodyTemplate(e.target.value)}
-              spellCheck={false}
-            />
-          </div>
-        </div>
-
-        {/* 5. Live substitution preview */}
+        {/* 4. Live substitution preview */}
         <div className="csv-live-preview">
           <div className="csv-live-preview-header">
             <span>🔍 Live Preview</span>
@@ -455,7 +383,7 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
               <span className="csv-preview-row-label">URL</span>
               <code className="csv-preview-value">{previewUrl || <span style={{ color: 'var(--overlay0)' }}>(empty)</span>}</code>
             </div>
-            {bodyTemplate && (
+            {previewBody && (
               <div className="csv-preview-row" style={{ alignItems: 'flex-start' }}>
                 <span className="csv-preview-row-label">Body</span>
                 <pre className="csv-preview-value csv-preview-pre">{previewBody}</pre>
@@ -476,7 +404,7 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
           </div>
         </div>
 
-        {/* 6. Batch controls */}
+        {/* 5. Batch controls */}
         <div className="csv-controls" style={{ flexWrap: 'wrap', gap: 8 }}>
           {/* Concurrency */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -503,7 +431,7 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
 
           {/* Run / Stop */}
           {!running ? (
-            <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={!urlTemplate} onClick={runBatch}>
+            <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={!url.trim()} onClick={runBatch}>
               ▶ Run Batch &nbsp;<span style={{ opacity: 0.75 }}>({csvData.rows.length} requests)</span>
             </button>
           ) : (
@@ -520,7 +448,7 @@ export default function CsvBatch({ method, baseUrl, baseBody, headers }) {
           )}
         </div>
 
-        {/* 7. Results table */}
+        {/* 6. Results table */}
         {results.length > 0 && (
           <div>
             <div className="csv-results-title">

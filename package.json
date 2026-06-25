@@ -8,15 +8,22 @@
     "dev:client": "vite",
     "build": "vite build",
     "start": "node server.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build --no-bundle",
+    "tauri:build:installer": "tauri build",
+    "tauri:build:win": "powershell -ExecutionPolicy Bypass -File scripts/tauri-build.ps1"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
     "axios": "^1.6.7",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "papaparse": "^5.4.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.3",
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
     "react": "^18.2.0",

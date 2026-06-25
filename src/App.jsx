@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { parseCurl, generateCurl } from './utils/curlParser'
 import { saveToHistory, getHistory, clearHistory } from './utils/storage'
+import { proxyRequest } from './utils/proxy'
+import { insertAtCursor } from './utils/editor'
 import HeadersEditor from './components/HeadersEditor'
 import BodyEditor from './components/BodyEditor'
 import ResponsePanel from './components/ResponsePanel'
@@ -45,6 +47,9 @@ export default function App() {
   const isDraggingRef = useRef(false)
   const dragStartYRef = useRef(0)
   const dragStartHeightRef = useRef(0)
+  const urlInputRef = useRef(null)
+  const bodyTextareaRef = useRef(null)
+  const lastFocusedRef = useRef('url')
 
   const onResizeMouseDown = (e) => {
     isDraggingRef.current = true
@@ -103,16 +108,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch('/api/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      })
-      const data = await res.json()
-
-      if (!res.ok && !data.status) {
-        throw new Error(data.error || `Proxy error ${res.status}`)
-      }
+      const data = await proxyRequest(requestBody)
 
       setResponse(data)
 
@@ -177,6 +173,23 @@ export default function App() {
     setError(null)
   }
 
+  // ─── Clear request inputs ─────────────────────────────────────────────────
+  const clearInputs = () => {
+    setHeaders([EMPTY_HEADER()])
+    setBody('')
+    setBodyType('none')
+    showToast('Headers and body cleared')
+  }
+
+  const insertParam = (col) => {
+    const ph = `{{${col}}}`
+    if (lastFocusedRef.current === 'body') {
+      insertAtCursor(bodyTextareaRef.current, ph, () => body, setBody)
+    } else {
+      insertAtCursor(urlInputRef.current, ph, () => url, setUrl)
+    }
+  }
+
   // ─── Copy cURL ────────────────────────────────────────────────────────────
   const copyAsCurl = () => {
     const headersObj = {}
@@ -206,6 +219,8 @@ export default function App() {
   }, [url, method, headers, body, bodyType])
 
   // ─── Current cURL output ──────────────────────────────────────────────────
+  const showResponse = activeTab !== 'csv'
+
   const curlOutput = (() => {
     const headersObj = {}
     headers.forEach(({ key, value, enabled }) => {
@@ -276,10 +291,12 @@ export default function App() {
             </select>
 
             <input
+              ref={urlInputRef}
               className="url-input"
               type="text"
               placeholder="https://api.example.com/endpoint"
               value={url}
+              onFocus={() => { lastFocusedRef.current = 'url' }}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && sendRequest()}
             />
@@ -304,7 +321,10 @@ export default function App() {
           </div>
 
           {/* Request tabs */}
-          <div className="request-section" style={{ height: reqPanelHeight }}>
+          <div
+            className="request-section"
+            style={showResponse ? { height: reqPanelHeight } : { flex: 1, minHeight: 0 }}
+          >
             <div className="tab-bar">
               <button
                 className={`tab-btn${activeTab === 'headers' ? ' active' : ''}`}
@@ -330,6 +350,14 @@ export default function App() {
               >
                 CSV Batch
               </button>
+              <button
+                className="btn btn-ghost"
+                style={{ marginLeft: 'auto', fontSize: 11, alignSelf: 'center' }}
+                onClick={clearInputs}
+                title="Clear headers and body"
+              >
+                ✕ Clear
+              </button>
             </div>
 
             <div className="tab-content">
@@ -343,24 +371,32 @@ export default function App() {
                   bodyType={bodyType}
                   onBodyChange={setBody}
                   onTypeChange={setBodyType}
+                  textareaRef={bodyTextareaRef}
+                  onTextareaFocus={() => { lastFocusedRef.current = 'body' }}
                 />
               </div>
               <div style={{ display: activeTab === 'csv' ? 'block' : 'none' }}>
                 <CsvBatch
                   method={method}
-                  baseUrl={url}
-                  baseBody={body}
+                  url={url}
+                  body={body}
+                  bodyType={bodyType}
                   headers={headers}
+                  onInsertParam={insertParam}
                 />
               </div>
             </div>
           </div>
 
-          {/* Drag resize handle */}
-          <div className="resize-handle" onMouseDown={onResizeMouseDown} title="Drag to resize" />
+          {showResponse && (
+            <>
+              {/* Drag resize handle */}
+              <div className="resize-handle" onMouseDown={onResizeMouseDown} title="Drag to resize" />
 
-          {/* Response */}
-          <ResponsePanel response={response} error={error} isLoading={isLoading} />
+              {/* Response */}
+              <ResponsePanel response={response} error={error} isLoading={isLoading} />
+            </>
+          )}
         </main>
       </div>
 

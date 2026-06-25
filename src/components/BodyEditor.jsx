@@ -8,7 +8,7 @@ const BODY_TYPES = [
   { id: 'form', label: 'form-data' },
 ]
 
-export default function BodyEditor({ body, bodyType, onBodyChange, onTypeChange, onFormDataChange, formData }) {
+export default function BodyEditor({ body, bodyType, onBodyChange, onTypeChange, onFormDataChange, formData, textareaRef, onTextareaFocus }) {
   const [kvForm, setKvForm] = useState(formData || [{ key: '', value: '', enabled: true }])
 
   const handleTypeChange = (type) => {
@@ -84,6 +84,7 @@ export default function BodyEditor({ body, bodyType, onBodyChange, onTypeChange,
       {(bodyType === 'json' || bodyType === 'raw') && (
         <div>
           <textarea
+            ref={textareaRef}
             className="body-textarea"
             placeholder={
               bodyType === 'json'
@@ -91,6 +92,7 @@ export default function BodyEditor({ body, bodyType, onBodyChange, onTypeChange,
                 : 'Request body...'
             }
             value={body}
+            onFocus={onTextareaFocus}
             onChange={(e) => onBodyChange(e.target.value)}
             spellCheck={false}
           />
