@@ -8,6 +8,8 @@ import BodyEditor from './components/BodyEditor'
 import ResponsePanel from './components/ResponsePanel'
 import HistoryPanel from './components/HistoryPanel'
 import CsvBatch from './components/CsvBatch'
+import ThemeToggle from './components/ThemeToggle'
+import { getThemeMode, setThemeMode, watchSystemTheme } from './utils/theme'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
 
@@ -34,6 +36,7 @@ export default function App() {
   const [curlError, setCurlError] = useState('')
   const [showCurlOutput, setShowCurlOutput] = useState(false)
   const [toast, setToast] = useState(null)
+  const [themeMode, setThemeModeState] = useState(getThemeMode)
 
   // ─── History ──────────────────────────────────────────────────────────────
   const [history, setHistory] = useState([])
@@ -41,6 +44,15 @@ export default function App() {
   useEffect(() => {
     setHistory(getHistory())
   }, [])
+
+  useEffect(() => {
+    return watchSystemTheme(() => setThemeModeState(getThemeMode()))
+  }, [])
+
+  const handleThemeChange = (mode) => {
+    setThemeMode(mode)
+    setThemeModeState(mode)
+  }
 
   // ─── Drag-to-resize: request panel height ────────────────────────────────
   const [reqPanelHeight, setReqPanelHeight] = useState(280)
@@ -238,6 +250,7 @@ export default function App() {
           <span className="logo-text">My Postman</span>
         </div>
         <div className="header-actions">
+          <ThemeToggle mode={themeMode} onChange={handleThemeChange} />
           <button
             className="btn btn-ghost"
             style={{ fontSize: 12 }}
